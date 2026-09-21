@@ -1,7 +1,7 @@
 # Atividade Prática: Sistema Cliente-Servidor (Capítulo 2)
 
 **Disciplina:** Sistemas Distribuídos  
-**Base:** Exemplo da Fig. 2.3 / Slide 5 (Capítulo 2)  
+**Base:** Slide 5 (Capítulo 2)  
 
 ---
 
