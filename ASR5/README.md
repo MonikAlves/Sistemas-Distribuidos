@@ -25,7 +25,7 @@
    - Com a mesma semente, todas as configurações recebem exatamente as mesmas requisições.
 
 4. **Experimento automatizado** (`experimento.py`)
-   - Sobe os servidores como processos separados, roda cada configuração 3 vezes e imprime a tabela de resultados em Markdown.
+   - Sobe os servidores como processos separados, roda cada configuração 3 vezes e salva a tabela em `resultados.md`.
 
 ---
 
@@ -84,32 +84,32 @@ Configurações comparadas:
 
 | Configuração | Tempo total (s) | Vazão (req/s) | Speedup vs A |
 |---|---|---|---|
-| A. Cliente single + servidor single (ASR4) | 1.091 ± 0.184 | 1833 | 1.00x |
-| B. Cliente single + servidor multi | 1.907 ± 0.258 | 1049 | 0.57x |
-| C. Cliente multi + servidor multi | 0.954 ± 0.087 | 2096 | 1.14x |
-| D. Cliente multi + servidor single | 0.822 ± 0.022 | 2433 | 1.33x |
-| E. Cliente multi + 2 servidores multi | 0.747 ± 0.032 | 2678 | 1.46x |
+| A. Cliente single + servidor single (ASR4) | 1.005 ± 0.102 | 1990 | 1.00x |
+| B. Cliente single + servidor multi | 1.337 ± 0.187 | 1495 | 0.75x |
+| C. Cliente multi + servidor multi | 0.832 ± 0.039 | 2403 | 1.21x |
+| D. Cliente multi + servidor single | 0.620 ± 0.050 | 3227 | 1.62x |
+| E. Cliente multi + 2 servidores multi | 0.601 ± 0.044 | 3326 | 1.67x |
 
 **Cenário 2: 10 ms de processamento por requisição**
 
 | Configuração | Tempo total (s) | Vazão (req/s) | Speedup vs A |
 |---|---|---|---|
-| A. Cliente single + servidor single (ASR4) | 32.255 ± 0.365 | 62 | 1.00x |
-| B. Cliente single + servidor multi | 33.122 ± 0.127 | 60 | 0.97x |
-| C. Cliente multi + servidor multi | 1.305 ± 0.093 | 1532 | **24.7x** |
-| D. Cliente multi + servidor single | 31.973 ± 0.273 | 63 | 1.01x |
-| E. Cliente multi + 2 servidores multi | 1.132 ± 0.017 | 1767 | **28.5x** |
+| A. Cliente single + servidor single (ASR4) | 31.923 ± 0.472 | 63 | 1.00x |
+| B. Cliente single + servidor multi | 33.038 ± 0.100 | 61 | 0.97x |
+| C. Cliente multi + servidor multi | 1.253 ± 0.021 | 1597 | **25.5x** |
+| D. Cliente multi + servidor single | 31.886 ± 0.152 | 63 | 1.00x |
+| E. Cliente multi + 2 servidores multi | 1.059 ± 0.063 | 1889 | **30.2x** |
 
 A tabela completa, com latência média e p95, está em [resultados.md](resultados.md). Nenhuma configuração teve falhas.
 
 ### Análise
 
-- **Multithreading só no servidor (B) não ajuda nada** quando o cliente é sequencial. Nunca há mais de uma requisição chegando ao mesmo tempo, então o servidor não tem o que paralelizar. Sem atraso, B fica até **mais lento** que A (0,57x), porque paga o custo de criar uma thread por requisição sem ganhar nada em troca.
-- **O ganho só aparece com cliente e servidor multithread juntos (C).** Com 10 ms de processamento, as 2000 requisições caíram de 32,3 s para 1,3 s, cerca de **25 vezes mais rápido**. Enquanto uma thread do servidor espera, as outras continuam atendendo.
+- **Multithreading só no servidor (B) não ajuda nada** quando o cliente é sequencial. Nunca há mais de uma requisição chegando ao mesmo tempo, então o servidor não tem o que paralelizar. Sem atraso, B fica até **mais lento** que A (0,75x), porque paga o custo de criar uma thread por requisição sem ganhar nada em troca.
+- **O ganho só aparece com cliente e servidor multithread juntos (C).** Com 10 ms de processamento, as 2000 requisições caíram de 31,9 s para 1,25 s, cerca de **25 vezes mais rápido**. Enquanto uma thread do servidor espera, as outras continuam atendendo.
 - **O servidor single-threaded é o gargalo (D).** Mesmo com 50 requisições em paralelo no cliente, D leva o mesmo tempo que A no cenário de 10 ms. As requisições só ficam na fila do `listen()`: a latência média sobe para ~790 ms, contra ~16 ms em A.
-- **Dois servidores (E)** deram o melhor resultado nos dois cenários (28,5x com atraso), porque a carga é dividida entre dois processos independentes.
-- **Sem atraso, as diferenças são pequenas** (entre 0,6x e 1,5x). Cada operação leva microssegundos e o tempo é dominado pelo custo de abrir a conexão TCP. Além disso, o GIL do Python impede que threads executem código Python em paralelo. As threads ajudam quando o trabalho **espera** (rede, disco, banco de dados), não quando é cálculo puro.
-- **O limite teórico de C não foi atingido.** Com 50 threads e ~16 ms por requisição, o teto seria de ~3100 req/s, e C chegou a ~1530 req/s. A diferença vem do custo de criar threads e abrir conexões, que também disputam o GIL.
+- **Dois servidores (E)** deram o melhor resultado nos dois cenários (30,2x com atraso), porque a carga é dividida entre dois processos independentes.
+- **Sem atraso, as diferenças são pequenas** (entre 0,75x e 1,7x). Cada operação leva microssegundos e o tempo é dominado pelo custo de abrir a conexão TCP. Nesse cenário, D (servidor single) foi até mais rápido que C, porque, sem trabalho para esperar, criar uma thread por requisição no servidor só acrescenta custo. Além disso, o GIL do Python impede que threads executem código Python em paralelo. As threads ajudam quando o trabalho **espera** (rede, disco, banco de dados), não quando é cálculo puro.
+- **O limite teórico de C não foi atingido.** Com 50 threads e ~16 ms por requisição, o teto seria de ~3100 req/s, e C chegou a ~1600 req/s. A diferença vem do custo de criar threads e abrir conexões, que também disputam o GIL.
 
 ### Observação técnica
 
@@ -125,5 +125,6 @@ Na primeira rodada apareceram milhares de falhas de conexão. Cada requisição 
 
 - `server.py`: servidor TCP com `--modo single` (ASR4) ou `--modo multi` (uma thread por requisição).
 - `client.py`: cliente com gerador aleatório de requisições, `--modo single` ou `--modo multi` (uma thread por requisição).
-- `experimento.py`: roda todas as configurações e imprime a tabela de resultados.
+- `experimento.py`: roda todas as configurações e gera `resultados.md`.
+- `resultados.md`: resultados brutos da última execução do experimento.
 - `constCS.py`, `.env.example`, `.gitignore`: iguais aos da ASR4.

@@ -8,18 +8,18 @@
 
 | Configuração | Tempo total (s) | Vazão (req/s) | Latência média (ms) | Latência p95 (ms) | Speedup vs A | Falhas |
 |---|---|---|---|---|---|---|
-| A. Cliente single + servidor single (ASR4) | 1.478 ± 0.402 | 1353.5 | 0.73 | 1.06 | 1.00x | 0 |
-| B. Cliente single + servidor multi | 2.043 ± 0.355 | 978.9 | 1.02 | 1.49 | 0.72x | 0 |
-| C. Cliente multi + servidor multi | 2.722 ± 2.315 | 734.7 | 65.77 | 98.62 | 0.54x | 1717 |
-| D. Cliente multi + servidor single | 6.004 ± 0.428 | 333.1 | 145.91 | 188.72 | 0.25x | 5950 |
-| E. Cliente multi + 2 servidores multi | 5.717 ± 0.039 | 349.8 | 138.27 | 185.99 | 0.26x | 5891 |
+| A. Cliente single + servidor single (ASR4) | 1.005 ± 0.102 | 1990.0 | 0.50 | 0.69 | 1.00x | 0 |
+| B. Cliente single + servidor multi | 1.337 ± 0.187 | 1495.4 | 0.67 | 0.88 | 0.75x | 0 |
+| C. Cliente multi + servidor multi | 0.832 ± 0.039 | 2402.6 | 19.90 | 22.69 | 1.21x | 0 |
+| D. Cliente multi + servidor single | 0.620 ± 0.050 | 3226.5 | 13.03 | 16.19 | 1.62x | 0 |
+| E. Cliente multi + 2 servidores multi | 0.601 ± 0.044 | 3325.6 | 1.15 | 1.50 | 1.67x | 0 |
 
 ## Atraso simulado no servidor: 10 ms por requisição
 
 | Configuração | Tempo total (s) | Vazão (req/s) | Latência média (ms) | Latência p95 (ms) | Speedup vs A | Falhas |
 |---|---|---|---|---|---|---|
-| A. Cliente single + servidor single (ASR4) | 7.363 ± 0.083 | 271.6 | 3.68 | 4.78 | 1.00x | 5996 |
-| B. Cliente single + servidor multi | 6.987 ± 0.195 | 286.2 | 3.49 | 4.74 | 1.05x | 5992 |
-| C. Cliente multi + servidor multi | 5.605 ± 0.223 | 356.9 | 135.77 | 176.87 | 1.31x | 5951 |
-| D. Cliente multi + servidor single | 32.778 ± 0.220 | 61.0 | 808.51 | 868.62 | 0.22x | 0 |
-| E. Cliente multi + 2 servidores multi | 1.349 ± 0.244 | 1482.9 | 27.21 | 43.35 | 5.46x | 0 |
+| A. Cliente single + servidor single (ASR4) | 31.923 ± 0.472 | 62.7 | 15.95 | 22.76 | 1.00x | 0 |
+| B. Cliente single + servidor multi | 33.038 ± 0.100 | 60.5 | 16.51 | 24.25 | 0.97x | 0 |
+| C. Cliente multi + servidor multi | 1.253 ± 0.021 | 1596.6 | 25.91 | 34.56 | 25.48x | 0 |
+| D. Cliente multi + servidor single | 31.886 ± 0.152 | 62.7 | 786.18 | 838.70 | 1.00x | 0 |
+| E. Cliente multi + 2 servidores multi | 1.059 ± 0.063 | 1888.9 | 20.51 | 28.23 | 30.15x | 0 |

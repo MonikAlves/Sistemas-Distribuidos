@@ -61,6 +61,7 @@ def main():
     parser.add_argument("--concorrencia", type=int, default=50)
     parser.add_argument("--atrasos", default="0,10", help="atrasos simulados no servidor (ms), separados por vírgula")
     parser.add_argument("--porta", type=int, default=6000)
+    parser.add_argument("--saida", default=str(PASTA / "resultados.md"))
     opcoes = parser.parse_args()
     atrasos = [float(a) for a in opcoes.atrasos.split(",")]
 
@@ -111,8 +112,8 @@ def main():
                           f"{tempo_base / tempo:.2f}x | {falhas} |")
         linhas.append("")
 
-    # Tabela completa em Markdown, pronta para colar no relato
-    print("\n" + "\n".join(linhas))
+    Path(opcoes.saida).write_text("\n".join(linhas), encoding="utf-8")
+    print(f"\nTabela salva em {opcoes.saida}")
 
 
 if __name__ == "__main__":
