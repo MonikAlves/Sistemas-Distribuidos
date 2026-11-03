@@ -113,11 +113,222 @@ python3 tasksrc.py 1     # na máquina PIPE_SRC1
 python3 tasksrc.py 2     # na máquina PIPE_SRC2
 ```
 
+### Criando as máquinas na AWS (como foi feito no teste)
+
+Usei o **AWS Academy Learner Lab** e rodei os comandos abaixo no **CloudShell**:
+
+```bash
+# Security Group: SSH só do CloudShell e portas do ZeroMQ só entre as instâncias do grupo
+MYIP=$(curl -s https://checkip.amazonaws.com)
+VPC=$(aws ec2 describe-vpcs --filters Name=isDefault,Values=true --query 'Vpcs[0].VpcId' --output text)
+SG=$(aws ec2 create-security-group --group-name sd-asr10 --description 'SD ASR10 ZeroMQ' --vpc-id $VPC --query GroupId --output text)
+aws ec2 authorize-security-group-ingress --group-id $SG --protocol tcp --port 22 --cidr $MYIP/32
+aws ec2 authorize-security-group-ingress --group-id $SG --protocol tcp --port 4567-4569 --source-group $SG
+aws ec2 create-key-pair --key-name sd-asr10 --query KeyMaterial --output text > ~/sd-asr10.pem && chmod 400 ~/sd-asr10.pem
+
+# User data: instala git e pyzmq e clona o repositório ao iniciar a instância
+printf '#!/bin/bash\ndnf install -y git python3-pip\npip3 install pyzmq\ngit clone https://github.com/MonikAlves/Cliente-Servidor-com-sockets.git /home/ec2-user/repo\nchown -R ec2-user:ec2-user /home/ec2-user/repo\n' > ~/ud.sh
+
+# Duas instâncias t3.micro com Amazon Linux 2023
+AMI=$(aws ssm get-parameter --name /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64 --query Parameter.Value --output text)
+aws ec2 run-instances --image-id $AMI --instance-type t3.micro --count 2 --key-name sd-asr10 \
+    --security-group-ids $SG --user-data file://$HOME/ud.sh \
+    --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=sd-asr10}]'
+```
+
+Depois, cada programa foi iniciado nas instâncias por `ssh -i ~/sd-asr10.pem ec2-user@<IP_PUBLICO>`, usando o **IP privado** nas variáveis `CS_HOST`, `PS_HOST` e `PIPE_*`.
+
 ---
 
-## 5. Testes realizados
+## 5. Testes na AWS (EC2)
 
-Testei com duas máquinas: **Windows 11** (`172.28.208.1`, Python 3.10 + pyzmq 27.1) e **Ubuntu 22.04 no WSL2** (`172.28.208.130`, Python 3.10 + pyzmq 22.3). O WSL2 é uma VM com IP próprio, então o tráfego passa pela rede entre as duas. As duas máquinas têm o mesmo hostname (`Monik`), por isso a saída mostra o sistema operacional para diferenciar.
+Ambiente: AWS Academy Learner Lab, região `us-east-1`, rede da VPC padrão.
+
+| Máquina | Instância | IP privado | Hostname |
+|---|---|---|---|
+| A | t3.micro, Amazon Linux 2023 | `172.31.24.5` | `ip-172-31-24-5.ec2.internal` |
+| B | t3.micro, Amazon Linux 2023 | `172.31.29.134` | `ip-172-31-29-134.ec2.internal` |
+
+As duas rodam Python 3.9 com pyzmq 27.2.0.
+
+### Req-Rep: servidor na A, cliente na B (`CS_HOST=172.31.24.5`)
+
+Cliente (máquina B):
+
+```
+Servidor: 172.31.24.5:4567 e 172.31.24.5:4568
+
+============================================================
+DEMO - TESTES DAS NOVAS FUNCIONALIDADES (REQ-REP)
+============================================================
+
+1) Operações disponíveis no servidor
+    operacoes() = ['maiuscula', 'inverter', 'contar_palavras', 'soma', 'hora', 'operacoes', 'estatisticas']  [ip-172-31-24-5.ec2.internal (Linux), 3.30 ms]
+
+2) Manipulação de texto
+    maiuscula('hello', 'world') = HELLO WORLD  [ip-172-31-24-5.ec2.internal (Linux), 0.91 ms]
+    inverter('sistemas distribuidos',) = sodiubirtsid sametsis  [ip-172-31-24-5.ec2.internal (Linux), 0.47 ms]
+    contar_palavras('zeromq req rep pub sub pipeline',) = 6  [ip-172-31-24-5.ec2.internal (Linux), 0.54 ms]
+
+3) Operação matemática
+    soma(10, 20, 12.5) = 42.5  [ip-172-31-24-5.ec2.internal (Linux), 0.65 ms]
+
+4) Utilitário
+    hora() = 03/11/2026 15:13:20  [ip-172-31-24-5.ec2.internal (Linux), 0.54 ms]
+
+5) Tratamento de erros (valor inválido e operação inexistente)
+    soma(10, 'abc') = ERRO: Erro de conversão: informe números válidos  [ip-172-31-24-5.ec2.internal (Linux), 0.61 ms]
+    xyz() = ERRO: Operação 'xyz' não reconhecida. Opções: maiuscula, inverter, contar_palavras, soma, hora, operacoes, estatisticas  [ip-172-31-24-5.ec2.internal (Linux), 0.44 ms]
+
+6) Estatísticas de requisições atendidas
+    estatisticas() = {'operacoes': 1, 'maiuscula': 1, 'inverter': 1, 'contar_palavras': 1, 'soma': 2, 'hora': 1, 'xyz': 1}  [ip-172-31-24-5.ec2.internal (Linux), 0.78 ms]
+
+============================================================
+Fim da demonstração.
+============================================================
+
+Servidor: 172.31.24.5:4567 e 172.31.24.5:4568
+    maiuscula('ola', 'aws') = OLA AWS  [ip-172-31-24-5.ec2.internal (Linux), 2.06 ms]
+Servidor: 172.31.24.5:4567 e 172.31.24.5:4568
+    STOP() = Servidor encerrado  [ip-172-31-24-5.ec2.internal (Linux), 2.11 ms]
+```
+
+Servidor (máquina A):
+
+```
+============================================================
+Servidor REP em ip-172-31-24-5.ec2.internal (Linux) nas portas 4567 e 4568...
+Aguardando requisições (Ctrl+C ou operação STOP para parar)...
+============================================================
+ -> Requisição recebida: {'op': 'operacoes', 'args': []}
+ -> Requisição recebida: {'op': 'maiuscula', 'args': ['hello', 'world']}
+ -> Requisição recebida: {'op': 'inverter', 'args': ['sistemas distribuidos']}
+ -> Requisição recebida: {'op': 'contar_palavras', 'args': ['zeromq req rep pub sub pipeline']}
+ -> Requisição recebida: {'op': 'soma', 'args': [10, 20, 12.5]}
+ -> Requisição recebida: {'op': 'hora', 'args': []}
+ -> Requisição recebida: {'op': 'soma', 'args': [10, 'abc']}
+ -> Requisição recebida: {'op': 'xyz', 'args': []}
+ -> Requisição recebida: {'op': 'estatisticas', 'args': []}
+ -> Requisição recebida: {'op': 'maiuscula', 'args': ['ola', 'aws']}
+ -> Requisição recebida: {'op': 'STOP', 'args': []}
+
+Servidor finalizado pela operação STOP.
+```
+
+Entre as duas instâncias, cada requisição levou entre 0,4 e 0,9 ms. A primeira (3,3 ms) inclui a abertura da conexão TCP, e as avulsas (~2 ms) também, porque cada execução do cliente abre uma conexão nova.
+
+### Pub-Sub: publisher na A, um subscriber em cada máquina
+
+Subscriber na B (`PS_HOST=172.31.24.5`, `subscriber.py -n 8 --topicos TEMP NEWS`):
+
+```
+Assinando ['TEMP', 'NEWS'] em tcp://172.31.24.5:4567 (8 mensagens)...
+ -> [TEMP #102] 18.3
+ -> [NEWS #102] AWS: instâncias EC2 conversando via ZeroMQ
+ -> [TEMP #103] 33.4
+ -> [TEMP #104] 32.1
+ -> [TEMP #105] 20.6
+ -> [NEWS #105] Pipeline distribui tarefas entre workers
+ -> [TEMP #106] 27.2
+ -> [TEMP #107] 18.4
+
+============================================================
+TEMP: mín 18.3  máx 33.4  média 25.0
+============================================================
+```
+
+Subscriber na A (`subscriber.py -n 5 --topicos TIME`, conectado em `127.0.0.1`):
+
+```
+Assinando ['TIME'] em tcp://127.0.0.1:4567 (5 mensagens)...
+ -> [TIME #105] Tue Nov  3 15:15:51 2026
+ -> [TIME #106] Tue Nov  3 15:15:52 2026
+ -> [TIME #107] Tue Nov  3 15:15:53 2026
+ -> [TIME #108] Tue Nov  3 15:15:54 2026
+ -> [TIME #109] Tue Nov  3 15:15:55 2026
+
+============================================================
+Mensagens TIME perdidas durante a assinatura: 0
+============================================================
+```
+
+Publisher (máquina A, início do log):
+
+```
+============================================================
+Publisher em ip-172-31-24-5.ec2.internal (Linux) na porta 4567...
+Tópicos: TIME, TEMP e NEWS, a cada 1 s (Ctrl+C para parar)
+============================================================
+ <- Publicado: TIME 1 Tue Nov  3 15:14:07 2026
+ <- Publicado: TEMP 1 33.7
+ <- Publicado: TIME 2 Tue Nov  3 15:14:08 2026
+ <- Publicado: TEMP 2 32.5
+ <- Publicado: TIME 3 Tue Nov  3 15:14:09 2026
+ ...
+
+Publisher finalizado pelo usuário.
+```
+
+Os subscribers entraram com o publisher no ar havia mais de 100 s. Eles começaram no #102 e no #105, e as mensagens anteriores não chegaram para eles (*slow joiner*). Depois de conectados, não perderam nenhuma mensagem.
+
+### Pipeline: fontes e workers nas duas instâncias
+
+| Componente | Máquina |
+|---|---|
+| fonte 1, worker 1, sink | A (`172.31.24.5`) |
+| fonte 2, worker 2 | B (`172.31.29.134`) |
+
+Saída do sink (máquina A):
+
+```
+============================================================
+Sink na porta 4569, esperando 40 resultados...
+============================================================
+ -> Fonte 1 tarefa  0 -> worker 2@ip-172-31-29-134.ec2.internal-Linux: 140641 primos (0.036 s de trabalho)
+ -> Fonte 1 tarefa  1 -> worker 1@ip-172-31-24-5.ec2.internal-Linux: 79970 primos (0.022 s de trabalho)
+ -> Fonte 1 tarefa  2 -> worker 2@ip-172-31-29-134.ec2.internal-Linux: 9592 primos (0.002 s de trabalho)
+ -> Fonte 1 tarefa  3 -> worker 1@ip-172-31-24-5.ec2.internal-Linux: 75618 primos (0.019 s de trabalho)
+ -> Fonte 1 tarefa  4 -> worker 2@ip-172-31-29-134.ec2.internal-Linux: 148933 primos (0.037 s de trabalho)
+ -> Fonte 1 tarefa  5 -> worker 1@ip-172-31-24-5.ec2.internal-Linux: 60978 primos (0.014 s de trabalho)
+ -> Fonte 1 tarefa  6 -> worker 2@ip-172-31-29-134.ec2.internal-Linux: 56543 primos (0.012 s de trabalho)
+ -> Fonte 1 tarefa  7 -> worker 1@ip-172-31-24-5.ec2.internal-Linux: 98610 primos (0.029 s de trabalho)
+ -> Fonte 1 tarefa  8 -> worker 2@ip-172-31-29-134.ec2.internal-Linux: 32300 primos (0.006 s de trabalho)
+ -> Fonte 1 tarefa  9 -> worker 1@ip-172-31-24-5.ec2.internal-Linux: 115588 primos (0.033 s de trabalho)
+ -> Fonte 1 tarefa 10 -> worker 2@ip-172-31-29-134.ec2.internal-Linux: 52074 primos (0.011 s de trabalho)
+ ...
+ -> Fonte 2 tarefa 19 -> worker 1@ip-172-31-24-5.ec2.internal-Linux: 81403 primos (0.021 s de trabalho)
+
+============================================================
+RESUMO
+============================================================
+1@ip-172-31-24-5.ec2.internal-Linux tarefas:  20  carga total:   947  fontes: ['1', '2']
+2@ip-172-31-29-134.ec2.internal-Linux tarefas:  20  carga total:   867  fontes: ['1', '2']
+Tempo médio fonte -> resultado: 0.018 s
+============================================================
+```
+
+Worker 2 (máquina B, início do log) e fim da fonte 2:
+
+```
+============================================================
+Worker 2 iniciado em ip-172-31-29-134.ec2.internal-Linux (Ctrl+C para parar)...
+============================================================
+ -> Tarefa 0 da fonte 1 (carga 94): 140641 primos
+ -> Tarefa 2 da fonte 1 (carga 5): 9592 primos
+ -> Tarefa 4 da fonte 1 (carga 100): 148933 primos
+ ...
+Fonte 2 terminou de enviar 20 tarefas.
+```
+
+Os dois workers estavam conectados antes de as fontes começarem. Por isso o round-robin do `PUSH` ficou perfeito: as tarefas da fonte 1 alternaram entre o worker 2 (pares) e o worker 1 (ímpares), e cada worker processou exatamente 20 das 40 tarefas, vindas das duas fontes.
+
+Ao fim dos testes, as instâncias foram paradas (`aws ec2 stop-instances`) para não consumir créditos.
+
+---
+
+## 6. Testes em máquinas locais (Windows + WSL2)
+
+Antes da AWS, testei com duas máquinas locais: **Windows 11** (`172.28.208.1`, Python 3.10 + pyzmq 27.1) e **Ubuntu 22.04 no WSL2** (`172.28.208.130`, Python 3.10 + pyzmq 22.3). O WSL2 é uma VM com IP próprio, então o tráfego passa pela rede entre as duas. As duas máquinas têm o mesmo hostname (`Monik`), por isso a saída mostra o sistema operacional para diferenciar.
 
 ### Req-Rep: servidor no Linux, cliente no Windows (`CS_HOST=172.28.208.130`)
 
@@ -245,7 +456,7 @@ Observações:
 
 ---
 
-## 6. Estrutura
+## 7. Estrutura
 
 ```
 ASR10/
