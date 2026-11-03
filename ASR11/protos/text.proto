@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package text;
+
+// Servico de aplicacao 2: processamento de texto
+service TextService {
+	rpc Upper (TextMsg) returns (TextReply) {}
+	rpc Reverse (TextMsg) returns (TextReply) {}
+	rpc CountWords (TextMsg) returns (CountReply) {}
+	rpc IsPalindrome (TextMsg) returns (BoolReply) {}
+}
+
+message TextMsg {
+	string text = 1;
+}
+
+message TextReply {
+	string text = 1;
+	string server = 2;
+}
+
+message CountReply {
+	int32 count = 1;
+	string server = 2;
+}
+
+message BoolReply {
+	bool value = 1;
+	string server = 2;
+}

@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package naming;
+
+// Servico de nomes: associa um nome logico ao endereco (ip:porta) de um servidor
+service NamingService {
+	rpc Bind (BindMsg) returns (StatusMsg) {}      // registra um nome novo
+	rpc Lookup (NameMsg) returns (AddressMsg) {}   // descobre o endereco de um nome
+	rpc Unbind (NameMsg) returns (StatusMsg) {}    // remove um registro
+	rpc Rebind (BindMsg) returns (StatusMsg) {}    // atualiza (ou cria) um registro
+	rpc List (Empty) returns (BindingList) {}      // lista todos os registros
+}
+
+message AddressMsg {
+	string ipaddress = 1;
+	string portnumber = 2;
+}
+
+message BindMsg {
+	string name = 1;
+	AddressMsg address = 2;
+}
+
+message NameMsg {
+	string name = 1;
+}
+
+message StatusMsg {
+	string status = 1;
+}
+
+message Empty {}
+
+message BindingList {
+	repeated BindMsg bindings = 1;
+}

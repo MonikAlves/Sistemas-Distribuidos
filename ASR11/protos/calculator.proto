@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package calculator;
+
+// Servico de aplicacao 1: calculadora
+service Calculator {
+	rpc Add (Operands) returns (Result) {}
+	rpc Subtract (Operands) returns (Result) {}
+	rpc Multiply (Operands) returns (Result) {}
+	rpc Divide (Operands) returns (Result) {}   // b == 0 -> INVALID_ARGUMENT
+}
+
+message Operands {
+	double a = 1;
+	double b = 2;
+}
+
+message Result {
+	double value = 1;
+	string server = 2;   // quem calculou (host:porta)
+}
