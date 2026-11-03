@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "io.grpc.examples.iotservice";
+option java_outer_classname = "IoTServiceProto";
+option objc_class_prefix = "TEMP";
+
+package employee_service;
+
+service EmployeeService {
+  // Create an employee record
+  rpc CreateEmployee (EmployeeData) returns (StatusReply) {}
+  // Get an employee´s data
+  rpc GetEmployeeDataFromID (EmployeeID) returns (EmployeeData) {}
+  // Update an employee´s title/position
+  rpc UpdateEmployeeTitle (EmployeeTitleUpdate) returns (StatusReply) {}
+  // Delete an employee
+  rpc DeleteEmployee (EmployeeID) returns (StatusReply) {}
+  // List all employees
+  rpc ListAllEmployees (EmptyMessage) returns (EmployeeDataList) {}
+  
+}
+
+message EmployeeData {
+  uint32 id = 1;
+  string name = 2;
+  string title = 3;
+}
+
+message StatusReply {
+  string status = 1;
+}
+
+message EmployeeID {
+  uint32 id = 1;
+}
+
+message EmployeeTitleUpdate {
+  uint32 id = 1;
+  string title = 2;
+}
+
+message EmptyMessage{}
+
+message EmployeeDataList{
+  repeated EmployeeData employee_data = 1;
+}
