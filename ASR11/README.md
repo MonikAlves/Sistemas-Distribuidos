@@ -87,6 +87,13 @@ source venv/bin/activate          # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+As versões do `requirements.txt` (grpcio 1.85 e protobuf 7) exigem **Python 3.10 ou mais novo**. No Amazon Linux 2023, cujo Python padrão é o 3.9, instale o 3.11:
+
+```bash
+sudo dnf install -y python3.11 python3.11-pip
+python3.11 -m pip install --user -r requirements.txt
+```
+
 ### Configuração
 
 Copie o `.env.example` para `.env` e coloque o IP da máquina do serviço de nomes:
@@ -119,9 +126,144 @@ Na AWS, libere as portas TCP 50051-50054 no Security Group.
 
 ---
 
-## 6. Testes realizados
+## 6. Testes na AWS (EC2)
 
-Usei duas máquinas: **Windows 11** (`172.28.208.1`) e **Ubuntu 22.04 no WSL2** (`172.28.208.130`, uma VM com IP próprio), com Python 3.10, grpcio 1.85.1 e protobuf 7.36.2 nas duas.
+Usei as mesmas duas instâncias da [ASR10](../ASR10/README.md#5-testes-na-aws-ec2): t3.micro com Amazon Linux 2023, região `us-east-1`. Instalei Python 3.11 com grpcio 1.85.1 e protobuf 7.36.2 e liberei as portas 50051-50054 só entre as instâncias do Security Group.
+
+| Processo | Máquina |
+|---|---|
+| Serviço de nomes (`:50051`) | A (`172.31.24.5`) |
+| `Calculator` (`:50052`) | A (`172.31.24.5`) |
+| `TextService` (`:50053`) | B (`172.31.29.134`) |
+| Cliente e `teste_nomes.py` | B (`172.31.29.134`) |
+
+### Testes 1 e 2: cliente na B descobre os serviços e testa o serviço de nomes
+
+```
+============================================================
+CLIENTE - serviço de nomes em 172.31.24.5:50051
+============================================================
+
+1) Calculator
+  lookup Calculator -> 172.31.24.5:50052
+    Add(10, 5) = 15   [172.31.24.5:50052]
+    Subtract(10, 5) = 5   [172.31.24.5:50052]
+    Multiply(6, 7) = 42   [172.31.24.5:50052]
+    Divide(22, 7) = 3.14286   [172.31.24.5:50052]
+    Divide(1, 0) = ERRO INVALID_ARGUMENT: Divisão por zero não é permitida
+
+2) TextService
+  lookup TextService -> 172.31.29.134:50053
+    Upper('sistemas distribuidos') = SISTEMAS DISTRIBUIDOS   [172.31.29.134:50053]
+    Reverse('gRPC naming') = gniman CPRg   [172.31.29.134:50053]
+    CountWords('bind lookup unbind rebind') = 4   [172.31.29.134:50053]
+    IsPalindrome('Socorram-me subi no onibus em Marrocos') = True   [172.31.29.134:50053]
+
+============================================================
+Fim dos testes.
+============================================================
+
+============================================================
+TESTE DO SERVIÇO DE NOMES
+============================================================
+  bind TesteSvc 10.0.0.1:6000      -> OK
+  bind TesteSvc (de novo)          -> ERRO ALREADY_EXISTS: Nome já registrado: TesteSvc
+  lookup TesteSvc                  -> 10.0.0.1:6000
+  rebind TesteSvc 10.0.0.2:6001    -> OK (atualizado)
+  lookup TesteSvc                  -> 10.0.0.2:6001
+  unbind TesteSvc                  -> OK
+  lookup TesteSvc                  -> ERRO NOT_FOUND: Nome não registrado: TesteSvc
+  unbind TesteSvc (de novo)        -> ERRO NOT_FOUND: Nome não registrado: TesteSvc
+
+Registros atuais:
+  Calculator   172.31.24.5:50052
+  TextService  172.31.29.134:50053
+```
+
+Cada servidor descobriu sozinho o próprio IP privado (o da interface que alcança o serviço de nomes) e se registrou com ele.
+
+### Testes 3 e 4: unbind ao encerrar e servidor mudando de máquina
+
+1. O `Calculator` na A recebeu SIGINT (Ctrl+C, via `timeout -s INT`) e saiu do serviço de nomes.
+2. Um cliente na B fez a 1ª chamada ao `TextService` da B e ficou esperando.
+3. O `TextService` da B foi morto com `kill -9` (sem `Unbind`).
+4. Um novo `TextService` subiu na **A, porta 50054**, e fez `Rebind`.
+5. A 2ª chamada do cliente encontrou o endereço antigo fora do ar, refez o lookup e foi atendida na A.
+
+Cliente da troca (máquina B):
+
+```
+  lookup TextService -> 172.31.29.134:50053
+1a chamada: ANTES DA TROCA [172.31.29.134:50053]
+  TextService indisponível, refazendo lookup...
+  lookup TextService -> 172.31.24.5:50054
+2a chamada: DEPOIS DA TROCA [172.31.24.5:50054]
+```
+
+`client.py` rodado depois (máquina B):
+
+```
+1) Calculator
+    Add(10, 5) = ERRO NOT_FOUND: Nome não registrado: Calculator
+    Subtract(10, 5) = ERRO NOT_FOUND: Nome não registrado: Calculator
+    Multiply(6, 7) = ERRO NOT_FOUND: Nome não registrado: Calculator
+    Divide(22, 7) = ERRO NOT_FOUND: Nome não registrado: Calculator
+    Divide(1, 0) = ERRO NOT_FOUND: Nome não registrado: Calculator
+
+2) TextService
+  lookup TextService -> 172.31.24.5:50054
+    Upper('sistemas distribuidos') = SISTEMAS DISTRIBUIDOS   [172.31.24.5:50054]
+    ...
+```
+
+Logs da máquina A (fim do `Calculator`, novo `TextService` e serviço de nomes):
+
+```
+ -> divisao(22, 7) = 3.14286
+unbind Calculator : OK
+
+Servidor finalizado pelo usuário.
+
+rebind TextService -> 172.31.24.5:50054 : OK (atualizado)
+============================================================
+TextService rodando em 172.31.24.5:50054 (Ctrl+C para parar)...
+============================================================
+ -> maiuscula: depois da troca
+ -> maiuscula: sistemas distribuidos
+ -> inverter: gRPC naming
+ -> contar_palavras: bind lookup unbind rebind
+ -> palindromo: Socorram-me subi no onibus em Marrocos
+
+============================================================
+Serviço de nomes rodando na porta 50051...
+Aguardando bind/lookup/unbind/rebind (Ctrl+C para parar)...
+============================================================
+ -> bind   Calculator = 172.31.24.5:50052
+ -> bind   TextService = 172.31.29.134:50053
+ -> lookup Calculator = 172.31.24.5:50052
+ -> lookup TextService = 172.31.29.134:50053
+ -> bind   TesteSvc = 10.0.0.1:6000
+ -> lookup TesteSvc = 10.0.0.1:6000
+ -> rebind TesteSvc = 10.0.0.2:6001
+ -> lookup TesteSvc = 10.0.0.2:6001
+ -> unbind TesteSvc
+ -> lookup TesteSvc = não encontrado
+ -> unbind Calculator
+ -> lookup TextService = 172.31.29.134:50053
+ -> rebind TextService = 172.31.24.5:50054
+ -> lookup TextService = 172.31.24.5:50054
+ -> lookup Calculator = não encontrado
+ ...
+ -> lookup TextService = 172.31.24.5:50054
+```
+
+Ao fim dos testes, as instâncias foram paradas para não consumir créditos.
+
+---
+
+## 7. Testes em máquinas locais (Windows + WSL2)
+
+Antes da AWS, usei duas máquinas locais: **Windows 11** (`172.28.208.1`) e **Ubuntu 22.04 no WSL2** (`172.28.208.130`, uma VM com IP próprio), com Python 3.10, grpcio 1.85.1 e protobuf 7.36.2 nas duas.
 
 | Processo | Máquina |
 |---|---|
@@ -251,7 +393,7 @@ Aguardando bind/lookup/unbind/rebind (Ctrl+C para parar)...
 
 ---
 
-## 7. Estrutura
+## 8. Estrutura
 
 ```
 ASR11/
